@@ -39,12 +39,12 @@ data/*.json
 *.csv
 
 # Models and outputs
-saved_models/
-reports/
-confusion_matrices/
-*.pkl
-*.h5
-*.pth
+# saved_models/
+# reports/
+# confusion_matrices/
+# *.pkl
+# *.h5
+# *.pth
 
 # Jupyter Notebook
 .ipynb_checkpoints
