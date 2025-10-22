@@ -38,28 +38,10 @@ env/
 data/*.json
 *.csv
 
-# Models and outputs
-# saved_models/
-# reports/
-# confusion_matrices/
-# *.pkl
-# *.h5
-# *.pth
 
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
-
-# Logs
-*.log
-
-# PDF
-*.pdf
-
-# Images
-*.png
-*.jpg
-*.jpeg
 
 # NLTK data
 nltk_data/
