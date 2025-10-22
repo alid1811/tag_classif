@@ -74,7 +74,61 @@ python cli.py train --model tfidf-minilm --data-dir ./data
 python cli.py train --model tfidf-minilm --data-dir ./data --augment --custom-thresholds
 ```
 
-#### 4. Comparer les deux modèles
+#### 4. Prédire sur de nouvelles questions
+```bash
+# Prédire une ou plusieurs questions directement
+python cli.py predict --model-dir ./saved_models/tfidf_logreg \
+  --questions "What is the derivative of x^2?" "How to solve linear equations?"
+
+# Prédire depuis un fichier JSON
+python cli.py predict --model-dir ./saved_models/tfidf_minilm \
+  --input-file questions.json --output-file predictions.json
+
+# Avec mode verbose pour voir les probabilités
+python cli.py predict --model-dir ./saved_models/tfidf_minilm \
+  --questions "What is conditional probability?" --verbose
+
+# Limiter au top 3 tags les plus probables
+python cli.py predict --model-dir ./saved_models/tfidf_logreg \
+  --input-file questions.json --top-k 3 --verbose
+
+# Avec seuil de probabilité personnalisé
+python cli.py predict --model-dir ./saved_models/tfidf_minilm \
+  --questions "What is Bayes theorem?" --threshold 0.3 --verbose
+```
+
+**Formats supportés pour les fichiers d'entrée:**
+
+```json
+// Format 1: Liste simple de questions
+[
+  "What is the probability of rolling a 6?",
+  "How to solve linear equations?",
+  "Explain graph traversal algorithms"
+]
+
+// Format 2: Liste de dictionnaires
+[
+  {"question": "What is the probability of rolling a 6?", "id": 1},
+  {"question": "How to solve linear equations?", "id": 2}
+]
+```
+
+**Format de sortie (JSON):**
+```json
+[
+  {
+    "question": "What is the probability of rolling a 6?",
+    "predicted_tags": ["probabilities", "math"],
+    "probabilities": {
+      "probabilities": 0.8532,
+      "math": 0.6421
+    }
+  }
+]
+```
+
+#### 5. Comparer les deux modèles
 ```bash
 python cli.py compare --data-dir ./data
 ```
@@ -103,6 +157,7 @@ python cli.py --help
 # Afficher l'aide pour une commande
 python cli.py train --help
 python cli.py compare --help
+python cli.py predict --help
 ```
 
 ## 🔧 Modules Python
@@ -184,15 +239,16 @@ print(results['report_text'])
 print(results['additional_metrics'])
 ```
 
-### 4. `train_model.py` - Entraînement des modèles
+### 4. `train_model.py` - Entraînement et Prédiction
 
 **Fonctions principales:**
 
 - `train_tfidf_logreg(data_dir, ...)`: Entraîne TF-IDF + LogReg
 - `train_tfidf_minilm(data_dir, ...)`: Entraîne TF-IDF + MiniLM
 - `compare_models(data_dir, ...)`: Compare les modèles
+- `predict_questions(questions, model_dir, ...)`: Prédit les tags pour de nouvelles questions
 
-**Exemple d'utilisation:**
+**Exemple d'utilisation - Entraînement:**
 ```python
 from src.train_model import train_tfidf_logreg
 
@@ -207,6 +263,54 @@ results = train_tfidf_logreg(
 
 model = results['model']
 evaluation_results = results['results']
+```
+
+**Exemple d'utilisation - Prédiction:**
+```python
+from src.train_model import predict_questions
+
+# Prédire sur une seule question
+predictions = predict_questions(
+    questions="What is the derivative of x^2?",
+    model_dir="saved_models/tfidf_logreg"
+)
+
+# Prédire sur plusieurs questions avec options
+predictions = predict_questions(
+    questions=[
+        "What is conditional probability?",
+        "How to implement a binary search tree?",
+        "Explain Bayes theorem"
+    ],
+    model_dir="saved_models/tfidf_minilm",
+    threshold=0.3,  # Seuil personnalisé
+    top_k=5        # Limiter à 5 tags maximum
+)
+
+# Accéder aux résultats
+for pred in predictions:
+    print(f"Tags: {pred['tags']}")
+    print(f"Probabilities: {pred['probabilities']}")
+```
+
+**Paramètres de `predict_questions`:**
+- `questions` (str ou List[str]): Question(s) à classifier
+- `model_dir` (str): Répertoire contenant le modèle sauvegardé
+- `threshold` (float, optional): Seuil de probabilité (défaut: 0.5 ou seuils du modèle)
+- `top_k` (int, optional): Nombre maximum de tags à retourner
+
+**Format de retour:**
+```python
+[
+    {
+        'tags': ['probabilities', 'math'],
+        'probabilities': {
+            'probabilities': 0.8532,
+            'math': 0.6421
+        }
+    },
+    ...
+]
 ```
 
 ## 📈 Classes Cibles
@@ -249,7 +353,39 @@ Ajustez les seuils de classification par classe:
 python cli.py train --model tfidf-minilm --data-dir ./data --custom-thresholds
 ```
 
+## 🔮 Exemple de Questions pour Test
 
+### Mathématiques
+```bash
+python cli.py predict --model-dir ./saved_models/tfidf_minilm \
+  --questions "What is the derivative of x^2?" \
+  "How to solve quadratic equations?" \
+  "Explain integration by parts" \
+  --verbose
+```
 
+### Utilisation avec fichier JSON
+```bash
+# Créer un fichier questions.json
+echo '[
+  "What is the probability of getting two heads in a row?",
+  "How to traverse a binary tree?",
+  "Explain the Euclidean algorithm",
+  "What is dynamic programming?"
+]' > questions.json
 
+# Prédire et sauvegarder les résultats
+python cli.py predict \
+  --model-dir ./saved_models/tfidf_minilm \
+  --input-file questions.json \
+  --output-file predictions.json \
+  --verbose \
+  --top-k 5
+```
 
+## 📝 Notes
+
+- Les modèles sauvegardés incluent le type de modèle pour un chargement automatique
+- La fonction `predict_questions` détecte automatiquement le type de modèle (TfidfLogReg ou TfidfMiniLM)
+- Le mode `--verbose` affiche les probabilités pour chaque tag prédit
+- Les seuils personnalisés permettent d'ajuster la sensibilité pour chaque classe
