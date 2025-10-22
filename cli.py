@@ -7,11 +7,12 @@ des modèles de classification multilabel.
 import argparse
 import sys
 import os
+import json
 
 # Ajouter le dossier src au path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from train_model import train_tfidf_logreg, train_tfidf_minilm, compare_models
+from train_model import train_tfidf_logreg, train_tfidf_minilm, compare_models, predict_questions
 
 
 def main():
@@ -31,6 +32,12 @@ Exemples d'utilisation:
   
   # Comparer les deux modèles
   python cli.py compare --data-dir ./data
+  
+  # Prédire sur de nouvelles questions
+  python cli.py predict --model-dir ./saved_models/tfidf_logreg --questions "What is the derivative of x^2?" "How to solve linear equations?"
+  
+  # Prédire depuis un fichier JSON
+  python cli.py predict --model-dir ./saved_models/tfidf_minilm --input-file questions.json --output-file predictions.json
   
   # Entraîner avec paramètres personnalisés
   python cli.py train --model tfidf-logreg --data-dir ./data --test-size 0.3 --max-iter 300
@@ -163,6 +170,64 @@ Exemples d'utilisation:
     )
     
     # ============================================================
+    # Commande: predict
+    # ============================================================
+    predict_parser = subparsers.add_parser(
+        'predict',
+        help='Prédire les tags pour de nouvelles questions'
+    )
+    
+    predict_parser.add_argument(
+        '--model-dir',
+        type=str,
+        required=True,
+        help='Répertoire contenant le modèle sauvegardé'
+    )
+    
+    # Groupe mutuellement exclusif: questions directes OU fichier d'entrée
+    input_group = predict_parser.add_mutually_exclusive_group(required=True)
+    
+    input_group.add_argument(
+        '--questions',
+        type=str,
+        nargs='+',
+        help='Une ou plusieurs questions à prédire (séparées par des espaces)'
+    )
+    
+    input_group.add_argument(
+        '--input-file',
+        type=str,
+        help='Fichier JSON contenant les questions (format: liste de strings ou liste de dicts avec clé "question")'
+    )
+    
+    predict_parser.add_argument(
+        '--output-file',
+        type=str,
+        default=None,
+        help='Fichier JSON de sortie pour sauvegarder les prédictions (optionnel)'
+    )
+    
+    predict_parser.add_argument(
+        '--threshold',
+        type=float,
+        default=None,
+        help='Seuil de probabilité pour les prédictions (par défaut: 0.5 ou seuils personnalisés du modèle)'
+    )
+    
+    predict_parser.add_argument(
+        '--top-k',
+        type=int,
+        default=None,
+        help='Nombre maximum de tags à retourner par question (par défaut: tous les tags au-dessus du seuil)'
+    )
+    
+    predict_parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Afficher les probabilités pour chaque prédiction'
+    )
+    
+    # ============================================================
     # Parsing des arguments
     # ============================================================
     args = parser.parse_args()
@@ -178,6 +243,8 @@ Exemples d'utilisation:
         execute_train(args)
     elif args.command == 'compare':
         execute_compare(args)
+    elif args.command == 'predict':
+        execute_predict(args)
 
 
 def execute_train(args):
@@ -289,6 +356,108 @@ def execute_compare(args):
         
     except Exception as e:
         print(f"\n❌ Erreur lors de la comparaison: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def execute_predict(args):
+    """
+    Exécute la commande de prédiction.
+    
+    Args:
+        args: Arguments parsés depuis la CLI
+    """
+    print("\n" + "="*70)
+    print("LANCEMENT DE LA PRÉDICTION")
+    print("="*70)
+    print(f"📂 Répertoire du modèle: {args.model_dir}")
+    
+    # Vérifier que le répertoire du modèle existe
+    if not os.path.exists(args.model_dir):
+        print(f"\n❌ Erreur: Le répertoire {args.model_dir} n'existe pas")
+        sys.exit(1)
+    
+    try:
+        # Charger les questions
+        if args.questions:
+            questions = args.questions
+            print(f"📝 Nombre de questions: {len(questions)}")
+        else:
+            # Charger depuis un fichier
+            print(f"📄 Chargement depuis: {args.input_file}")
+            with open(args.input_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Gérer différents formats
+            if isinstance(data, list):
+                if len(data) > 0 and isinstance(data[0], dict):
+                    # Format: [{"question": "...", ...}, ...]
+                    questions = [item.get('question', item.get('text', '')) for item in data]
+                else:
+                    # Format: ["question1", "question2", ...]
+                    questions = data
+            else:
+                print(f"\n❌ Erreur: Format de fichier non reconnu. Attendu: liste de strings ou liste de dicts")
+                sys.exit(1)
+            
+            print(f"📝 Nombre de questions chargées: {len(questions)}")
+        
+        # Effectuer les prédictions
+        print("\n🔮 Prédiction en cours...")
+        predictions = predict_questions(
+            questions=questions,
+            model_dir=args.model_dir,
+            threshold=args.threshold,
+            top_k=args.top_k
+        )
+        
+        # Afficher les résultats
+        print("\n" + "="*70)
+        print("RÉSULTATS DES PRÉDICTIONS")
+        print("="*70)
+        
+        for i, (question, pred) in enumerate(zip(questions, predictions), 1):
+            print(f"\n{'─'*70}")
+            print(f"Question {i}: {question[:100]}{'...' if len(question) > 100 else ''}")
+            print(f"{'─'*70}")
+            
+            tags = pred['tags']
+            if tags:
+                print(f"🏷️  Tags prédits: {', '.join(tags)}")
+                
+                if args.verbose and 'probabilities' in pred:
+                    print("\n📊 Probabilités:")
+                    probs = pred['probabilities']
+                    for tag in tags:
+                        if tag in probs:
+                            print(f"   • {tag}: {probs[tag]:.4f}")
+            else:
+                print("🏷️  Aucun tag prédit")
+        
+        # Sauvegarder les résultats si demandé
+        if args.output_file:
+            output_data = []
+            for question, pred in zip(questions, predictions):
+                output_item = {
+                    'question': question,
+                    'predicted_tags': pred['tags']
+                }
+                if 'probabilities' in pred:
+                    output_item['probabilities'] = pred['probabilities']
+                output_data.append(output_item)
+            
+            with open(args.output_file, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"\n💾 Prédictions sauvegardées dans: {args.output_file}")
+        
+        print("\n" + "="*70)
+        print("✅ PRÉDICTION TERMINÉE AVEC SUCCÈS!")
+        print("="*70)
+        
+    except Exception as e:
+        print(f"\n❌ Erreur lors de la prédiction: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

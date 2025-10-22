@@ -249,43 +249,7 @@ Ajustez les seuils de classification par classe:
 python cli.py train --model tfidf-minilm --data-dir ./data --custom-thresholds
 ```
 
-## 🔬 Exemples d'Utilisation Avancée
 
-### Utilisation programmatique complète
-```python
-from src.data import load_json_files, preprocess_data
-from src.models import TfidfMiniLMClassifier
-from src.evaluation import evaluate_model
-from sklearn.model_selection import train_test_split
-
-# 1. Charger et preprocesser
-df = load_json_files("data/")
-df = preprocess_data(df)
-
-# 2. Préparer les données
-X = df["clean_text"]
-y = df["raw"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
-
-# 3. Entraîner
-model = TfidfMiniLMClassifier(max_features=30000, max_iter=300)
-model.fit(X_train, y_train)
-
-# 4. Évaluer
-Y_test = model.mlb.transform(y_test)
-results = evaluate_model(
-    model, X_test, Y_test, 
-    class_names=list(model.mlb.classes_),
-    output_dir="reports/custom",
-    model_name="CustomModel"
-)
-
-# 5. Sauvegarder
-model.save("saved_models/custom_model")
-```
 
 
 

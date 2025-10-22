@@ -7,8 +7,9 @@ import os
 import sys
 import pandas as pd
 import numpy as np
+import joblib
 from sklearn.model_selection import train_test_split
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List, Union
 
 # Import des modules du projet
 from data import (
@@ -320,8 +321,111 @@ def compare_models(data_dir: str,
     return comparison_df
 
 
+def predict_questions(questions: Union[str, List[str]],
+                     model_dir: str,
+                     threshold: Optional[float] = None,
+                     top_k: Optional[int] = None) -> List[Dict]:
+    """
+    Prédit les tags pour une ou plusieurs questions en utilisant un modèle sauvegardé.
+    
+    Args:
+        questions (str or List[str]): Question(s) à classifier
+        model_dir (str): Répertoire contenant le modèle sauvegardé
+        threshold (float, optional): Seuil de probabilité pour les prédictions
+                                     Si None, utilise le seuil par défaut du modèle
+        top_k (int, optional): Nombre maximum de tags à retourner par question
+        
+    Returns:
+        List[Dict]: Liste de dictionnaires contenant les prédictions pour chaque question
+                   Format: [{'tags': [...], 'probabilities': {...}}, ...]
+    """
+    # Convertir une seule question en liste
+    if isinstance(questions, str):
+        questions = [questions]
+    
+    # Vérifier que le répertoire du modèle existe
+    if not os.path.exists(model_dir):
+        raise ValueError(f"Le répertoire du modèle n'existe pas: {model_dir}")
+    
+    # Charger le modèle
+    print(f"📥 Chargement du modèle depuis: {model_dir}")
+    
+    # Détecter le type de modèle
+    model_type_file = os.path.join(model_dir, "model_type.txt")
+    if os.path.exists(model_type_file):
+        with open(model_type_file, 'r') as f:
+            model_type = f.read().strip()
+    else:
+        # Essayer de détecter automatiquement
+        if os.path.exists(os.path.join(model_dir, "sentence_transformer")):
+            model_type = "TfidfMiniLMClassifier"
+        else:
+            model_type = "TfidfLogRegClassifier"
+    
+    print(f"🔍 Type de modèle détecté: {model_type}")
+    
+    # Charger le modèle approprié
+    if model_type == "TfidfLogRegClassifier":
+        model = TfidfLogRegClassifier()
+        model.load(model_dir)
+    elif model_type == "TfidfMiniLMClassifier":
+        model = TfidfMiniLMClassifier()
+        model.load(model_dir)
+    else:
+        raise ValueError(f"Type de modèle inconnu: {model_type}")
+    
+    # Effectuer les prédictions
+    predictions = []
+    
+    for question in questions:
+        # Obtenir les probabilités
+        if hasattr(model, 'predict_proba'):
+            proba = model.predict_proba([question])[0]
+        else:
+            # Fallback si predict_proba n'existe pas
+            pred = model.predict([question])[0]
+            predictions.append({
+                'tags': [model.mlb.classes_[i] for i, val in enumerate(pred) if val == 1],
+                'probabilities': {}
+            })
+            continue
+        
+        # Créer un dictionnaire de probabilités pour tous les tags
+        proba_dict = {
+            tag: float(prob) 
+            for tag, prob in zip(model.mlb.classes_, proba)
+        }
+        
+        # Appliquer le seuil
+        if threshold is not None:
+            # Utiliser le seuil personnalisé
+            predicted_tags = [tag for tag, prob in proba_dict.items() if prob >= threshold]
+        else:
+            # Utiliser la prédiction par défaut du modèle
+            pred = model.predict([question])[0]
+            predicted_tags = [model.mlb.classes_[i] for i, val in enumerate(pred) if val == 1]
+        
+        # Trier par probabilité décroissante
+        predicted_tags = sorted(predicted_tags, key=lambda x: proba_dict[x], reverse=True)
+        
+        # Limiter au top-k si spécifié
+        if top_k is not None and top_k > 0:
+            predicted_tags = predicted_tags[:top_k]
+        
+        # Filtrer les probabilités pour ne garder que les tags prédits
+        filtered_proba = {tag: proba_dict[tag] for tag in predicted_tags}
+        
+        predictions.append({
+            'tags': predicted_tags,
+            'probabilities': filtered_proba
+        })
+    
+    return predictions
+
+
 if __name__ == "__main__":
-    print("Module train_model.py - Fonctions d'entraînement disponibles")
+    print("Module train_model.py - Fonctions disponibles:")
     print("- train_tfidf_logreg(): Entraîne TF-IDF + LogReg")
     print("- train_tfidf_minilm(): Entraîne TF-IDF + MiniLM + LogReg")
     print("- compare_models(): Compare les deux modèles")
+    print("- predict_questions(): Prédit les tags pour de nouvelles questions")
